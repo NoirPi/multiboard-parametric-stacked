@@ -22,6 +22,16 @@ corner_tiles = 1;
 // Your slicer's layer thickness in millimeters; 0.2 mm is strongly recommended
 layer_thickness = 0.2;
 
+/* [Separator Layers] */
+
+// Part to render: "all" for preview, "tiles" to export tile STL, "separators" to export separator STL
+// Load both STLs in your slicer and assign the separator a different filament for easy tile separation.
+part = "all"; // [all, tiles, separators]
+// Air gap above and below each separator to prevent fusion during printing
+separator_gap = 0.0; // [0:0.01:0.5]
+// Add a separator at the very bottom of each stack (useful for bed adhesion with a different filament)
+bottom_separator = false;
+
 /* [Per-Shape Tuning] */
 
 // X size of the side tiles; "0" means to use the main x_cells setting
@@ -103,32 +113,55 @@ peg_hole_thread_d2 = peg_hole_thick_size+0;
 peg_hole_thread_h1 = 0.77+0;
 peg_hole_thread_h2 = peg_hole_thread_pitch-0.5;
 
-// Distance between stacked layers.  There should be at least one empty
-// layer between adjacent tiles.  If the height of a single tile is not
-// evenly divisible by the layer thickness, we might need more space than
-// just the layer thickness to make sure that happens.
-layer_separation = abs(-height % layer_thickness) + layer_thickness;
+// Distance between stacked layers.  Must be at least one layer thick and,
+// when separator layers are used, large enough to fit the separator plus the
+// gap on each side.  Always rounded up to a multiple of layer_thickness so
+// the next tile starts on a clean layer boundary.
+_base_separation = abs(-height % layer_thickness) + layer_thickness;
+layer_separation = ceil(max(_base_separation, layer_thickness + 2 * separator_gap) / layer_thickness) * layer_thickness;
 stack_height = height + layer_separation;
 
 
 // Here's the stack
 
+_group_z_shift = bottom_separator ? layer_separation : 0;
+
 multiboard_tile_stack(core_tiles, x_cells, y_cells, right_peg_holes=true, top_peg_holes=true);
 
-translate([0, 0, stack_height * core_tiles])
+translate([0, 0, _group_z_shift + stack_height * core_tiles])
   multiboard_tile_stack(side_tiles, real_side_x_cells, real_side_y_cells, right_peg_holes=false, top_peg_holes=true);
 
-translate([0, 0, stack_height * (core_tiles + side_tiles)])
+translate([0, 0, 2 * _group_z_shift + stack_height * (core_tiles + side_tiles)])
   multiboard_tile_stack(corner_tiles, real_corner_x_cells, real_corner_y_cells, right_peg_holes=false, top_peg_holes=false);
 
 
 // Now, all the modules the stack uses
 
 module multiboard_tile_stack(tile_count, x_cells, y_cells, right_peg_holes, top_peg_holes, exceptions) {
-  if (tile_count > 0)
+  z_shift = bottom_separator ? layer_separation : 0;
+  if (tile_count > 0) {
+    if (bottom_separator && part != "tiles")
+      translate([0, 0, (layer_separation - layer_thickness) / 2])
+        color("black")
+          multiboard_tile_separator(x_cells, y_cells, right_peg_holes, top_peg_holes, exceptions);
     for (level = [0:tile_count-1])
-      translate([0, 0, stack_height * level])
-        multiboard_tile(x_cells, y_cells, right_peg_holes, top_peg_holes, exceptions);
+      translate([0, 0, z_shift + stack_height * level]) {
+        if (part != "separators")
+          multiboard_tile(x_cells, y_cells, right_peg_holes, top_peg_holes, exceptions);
+        if (part != "tiles" && level < tile_count - 1)
+          translate([0, 0, height + (layer_separation - layer_thickness) / 2])
+            color("orange")
+              multiboard_tile_separator(x_cells, y_cells, right_peg_holes, top_peg_holes, exceptions);
+      }
+  }
+}
+
+
+module multiboard_tile_separator(x_cells, y_cells, right_peg_holes, top_peg_holes, exceptions) {
+  intersection() {
+    multiboard_tile(x_cells, y_cells, right_peg_holes, top_peg_holes, exceptions);
+    cube([x_cells * cell_size + cell_size, y_cells * cell_size + cell_size, layer_thickness]);
+  }
 }
 
 

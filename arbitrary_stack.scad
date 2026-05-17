@@ -35,6 +35,16 @@ tiles = [
 // Your slicer's layer thickness in millimeters; 0.2 mm is strongly recommended
 layer_thickness = 0.2;
 
+/* [Separator Layers] */
+
+// Part to render: "all" for preview, "tiles" to export tile STL, "separators" to export separator STL
+// Load both STLs in your slicer and assign the separator a different filament for easy tile separation.
+part = "all"; // [all, tiles, separators]
+// Air gap above and below each separator to prevent fusion during printing
+separator_gap = 0.0; // [0:0.01:0.5]
+// Add a separator at the very bottom of each stack (useful for bed adhesion with a different filament)
+bottom_separator = false;
+
 
 // No user-servicable parts below this line.
 
@@ -44,10 +54,12 @@ use <multiboard_base.scad>
 // need.
 cell_size = 25+0;
 height = 6.4+0;
-stack_height = height + abs(-height % layer_thickness) + layer_thickness;
+_base_separation = abs(-height % layer_thickness) + layer_thickness;
+layer_separation = ceil(max(_base_separation, layer_thickness + 2 * separator_gap) / layer_thickness) * layer_thickness;
+stack_height = height + layer_separation;
 
 
-module tile_group(offset, tile_params) {
+module tile_group(offset, group_index, tile_params) {
   count = tile_params[0];
   x_cells = tile_params[1];
   y_cells = tile_params[2];
@@ -55,10 +67,22 @@ module tile_group(offset, tile_params) {
   exceptions = tile_params[4];
   assert(x_cells >= 1, "X dimension must be at least 1");
   assert(y_cells >= 1, "Y dimension must be at least 1");
-  translate([0, 0, offset * stack_height])
+  z_shift = bottom_separator ? layer_separation : 0;
+  translate([0, 0, group_index * z_shift + offset * stack_height]) {
+    if (bottom_separator && part != "tiles")
+      translate([0, 0, (layer_separation - layer_thickness) / 2])
+        color("orange")
+          generic_tile_separator(x_cells, y_cells, shape, exceptions);
     for (level = [0:1:count-1])
-      translate([0, 0, level * stack_height])
-        generic_tile(x_cells, y_cells, shape, exceptions);
+      translate([0, 0, z_shift + level * stack_height]) {
+        if (part != "separators")
+          generic_tile(x_cells, y_cells, shape, exceptions);
+        if (part != "tiles" && level < count - 1)
+          translate([0, 0, height + (layer_separation - layer_thickness) / 2])
+            color("orange")
+              generic_tile_separator(x_cells, y_cells, shape, exceptions);
+      }
+  }
 }
 
 
@@ -73,7 +97,18 @@ module generic_tile(x_cells, y_cells, shape, exceptions) {
 }
 
 
+module generic_tile_separator(x_cells, y_cells, shape, exceptions) {
+  if (shape == "core")              {multiboard_tile_separator(x_cells, y_cells, right_peg_holes=true, top_peg_holes=true, exceptions=exceptions);}
+  else if (shape == "side")         {multiboard_tile_separator(x_cells, y_cells, right_peg_holes=false, top_peg_holes=true, exceptions=exceptions);}
+  else if (shape == "rotated side") {multiboard_tile_separator(x_cells, y_cells, right_peg_holes=true, top_peg_holes=false, exceptions=exceptions);}
+  else if (shape == "corner")       {multiboard_tile_separator(x_cells, y_cells, right_peg_holes=false, top_peg_holes=false, exceptions=exceptions);}
+  else {
+    assert(false, "Unknown tile shape");
+  }
+}
+
+
 offsets = [ for (o = 0, i = 0; i < len(tiles); o = o + tiles[i][0], i = i + 1) o ];
 
 for ( i = [0:1:len(tiles)-1] )
-  tile_group(offsets[i], tiles[i]);
+  tile_group(offsets[i], i, tiles[i]);

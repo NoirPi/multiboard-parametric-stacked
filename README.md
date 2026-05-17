@@ -6,8 +6,8 @@ This is an [OpenSCAD][] file for generating arbitrary stacked
   [OpenSCAD]: https://openscad.org/
   [Multiboard]: https://www.multiboard.io/
 
-![Rendering of a stack of Multiboard tiles](/assets/multiboard_base.png)
-
+![Rendering of a stack of Multiboard tiles](/assets/multiboard_base_original.png)
+![Rendering of a stack of Multiboard tiles with separators](/assets/multiboard_base_forked.png)
 
 ## Usage
 
